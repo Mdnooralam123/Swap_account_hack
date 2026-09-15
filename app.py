@@ -32,19 +32,6 @@ def now_info():
     }
 
 
-def get_bind_info(access_token):
-    """Get bind info (email info) from access token."""
-    try:
-        r = SESSION.get(
-            f"{BASE_URL}/game/account_security/bind:get_bind_info",
-            params={'app_id': APP_ID, 'access_token': access_token},
-            timeout=10,
-        )
-        return r.json()
-    except Exception as e:
-        return {"error": str(e)}
-
-
 def send_otp_api(access_token, email):
     """Trigger OTP send via swap:send_otp."""
     try:
@@ -87,9 +74,13 @@ def index():
     return jsonify({
         "success": True,
         "message": "Garena OTP Sender API (swap:send_otp)",
-        "version": "3.0",
-        "endpoint": "/send_otp?accesstoken=YOUR_ACCESS_TOKEN",
-        "example": "https://your-app.vercel.app/send_otp?accesstoken=xxxxx",
+        "version": "4.0",
+        "endpoint": "/send_otp?accesstoken=YOUR_ACCESS_TOKEN&email=user@example.com",
+        "example": "https://your-app.vercel.app/send_otp?accesstoken=xxxxx&email=user@gmail.com",
+        "parameters": {
+            "accesstoken": "required — Garena access token",
+            "email": "required — recovery email to send OTP to"
+        },
         "note": "No rate limit — jitni baar chaho bhej sakte ho",
         "credits": {
             "developer": "@DANGER_FF_LIKE",
@@ -106,6 +97,8 @@ def send_otp():
              or request.args.get('access_token')
              or '').strip()
 
+    email = (request.args.get('email') or '').strip()
+
     # ---------- Missing token ----------
     if not token:
         return jsonify({
@@ -113,7 +106,7 @@ def send_otp():
             "status": "MISSING_TOKEN",
             "message": "accesstoken parameter is required",
             "how_to_fix": "Add ?accesstoken=YOUR_ACCESS_TOKEN to the URL",
-            "example": "/send_otp?accesstoken=xxxxx",
+            "example": "/send_otp?accesstoken=xxxxx&email=user@gmail.com",
             "timestamp": now_info(),
             "credits": {
                 "developer": "@DANGER_FF_LIKE",
@@ -122,33 +115,14 @@ def send_otp():
             }
         }), 400
 
-    # ---------- Fetch email from access token ----------
-    bind = get_bind_info(token)
-    if bind.get('result') != 0:
-        return jsonify({
-            "success": False,
-            "status": "INVALID_ACCESS_TOKEN",
-            "message": "Access token is invalid or expired",
-            "how_to_fix": "Get a fresh access token and try again",
-            "garena_response": bind,
-            "timestamp": now_info(),
-            "credits": {
-                "developer": "@DANGER_FF_LIKE",
-                "main_channel": "@freefirelikesdanger",
-                "apis_channel": "@dangerfreeapis"
-            }
-        }), 400
-
-    # Prefer pending email (email_to_be), otherwise current email
-    email = (bind.get('email_to_be') or bind.get('email') or '').strip()
-
+    # ---------- Missing email ----------
     if not email:
         return jsonify({
             "success": False,
-            "status": "NO_EMAIL_FOUND",
-            "message": "No recovery email is linked with this account",
-            "how_to_fix": "Bind a recovery email first",
-            "garena_response": bind,
+            "status": "MISSING_EMAIL",
+            "message": "email parameter is required",
+            "how_to_fix": "Add &email=user@gmail.com to the URL",
+            "example": "/send_otp?accesstoken=xxxxx&email=user@gmail.com",
             "timestamp": now_info(),
             "credits": {
                 "developer": "@DANGER_FF_LIKE",
