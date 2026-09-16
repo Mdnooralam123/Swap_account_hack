@@ -32,11 +32,11 @@ def now_info():
     }
 
 
-def send_otp_api(access_token, email):
-    """Trigger OTP send via swap:send_otp."""
+def call_send_otp(endpoint_path, access_token, email):
+    """Generic sender — call any send_otp endpoint."""
     try:
         r = SESSION.post(
-            f"{BASE_URL}/game/account_security/swap:send_otp",
+            f"{BASE_URL}{endpoint_path}",
             data={
                 'app_id': APP_ID,
                 'access_token': access_token,
@@ -73,15 +73,19 @@ def mask_email(email):
 def index():
     return jsonify({
         "success": True,
-        "message": "Garena OTP Sender API (swap:send_otp)",
-        "version": "4.0",
+        "message": "Garena OTP Sender API (security + swap)",
+        "version": "5.0",
         "endpoint": "/send_otp?accesstoken=YOUR_ACCESS_TOKEN&email=user@example.com",
         "example": "https://your-app.vercel.app/send_otp?accesstoken=xxxxx&email=user@gmail.com",
         "parameters": {
             "accesstoken": "required — Garena access token",
             "email": "required — recovery email to send OTP to"
         },
-        "note": "No rate limit — jitni baar chaho bhej sakte ho",
+        "endpoints_used": [
+            "/game/account_security/security:send_otp",
+            "/game/account_security/swap:send_otp"
+        ],
+        "note": "Dono endpoints ek saath hit hote hain, no rate limit",
         "credits": {
             "developer": "@DANGER_FF_LIKE",
             "main_channel": "@freefirelikesdanger",
@@ -92,11 +96,9 @@ def index():
 
 @app.route('/send_otp', methods=['GET'])
 def send_otp():
-    # Support both ?accesstoken= and ?access_token=
     token = (request.args.get('accesstoken')
              or request.args.get('access_token')
              or '').strip()
-
     email = (request.args.get('email') or '').strip()
 
     # ---------- Missing token ----------
@@ -131,17 +133,46 @@ def send_otp():
             }
         }), 400
 
-    # ---------- Send OTP via swap:send_otp (no limit) ----------
+    # ---------- Fire BOTH endpoints ----------
     started = time.time()
-    otp_resp = send_otp_api(token, email)
+
+    security_resp = call_send_otp(
+        "/game/account_security/security:send_otp", token, email
+    )
+    swap_resp = call_send_otp(
+        "/game/account_security/swap:send_otp", token, email
+    )
+
     elapsed_ms = int((time.time() - started) * 1000)
 
-    if otp_resp.get('result') == 0:
+    security_ok = security_resp.get('result') == 0
+    swap_ok     = swap_resp.get('result') == 0
+    any_ok      = security_ok or swap_ok
+
+    # ---------- If at least one succeeded ----------
+    if any_ok:
+        which = []
+        if security_ok: which.append("security:send_otp")
+        if swap_ok:     which.append("swap:send_otp")
+
         return jsonify({
             "success": True,
             "status": "OTP_SENT",
-            "message": f"OTP successfully sent to {mask_email(email)}",
-            "endpoint_used": "/game/account_security/swap:send_otp",
+            "message": f"OTP successfully sent to {mask_email(email)} via {' + '.join(which)}",
+            "endpoints_used": [
+                "/game/account_security/security:send_otp",
+                "/game/account_security/swap:send_otp"
+            ],
+            "results": {
+                "security_send_otp": {
+                    "success": security_ok,
+                    "response": security_resp
+                },
+                "swap_send_otp": {
+                    "success": swap_ok,
+                    "response": swap_resp
+                }
+            },
             "data": {
                 "email": email,
                 "email_masked": mask_email(email),
@@ -149,8 +180,8 @@ def send_otp():
                 "response_time_ms": elapsed_ms,
                 "rate_limited": False,
                 "limit": "unlimited",
+                "success_via": which
             },
-            "garena_response": otp_resp,
             "timestamp": now_info(),
             "credits": {
                 "developer": "@DANGER_FF_LIKE",
@@ -159,13 +190,26 @@ def send_otp():
             }
         })
 
+    # ---------- Both failed ----------
     return jsonify({
         "success": False,
         "status": "OTP_SEND_FAILED",
-        "message": "Garena server refused to send OTP",
-        "endpoint_used": "/game/account_security/swap:send_otp",
+        "message": "Both security and swap endpoints refused to send OTP",
+        "endpoints_used": [
+            "/game/account_security/security:send_otp",
+            "/game/account_security/swap:send_otp"
+        ],
+        "results": {
+            "security_send_otp": {
+                "success": False,
+                "response": security_resp
+            },
+            "swap_send_otp": {
+                "success": False,
+                "response": swap_resp
+            }
+        },
         "email": mask_email(email),
-        "garena_response": otp_resp,
         "timestamp": now_info(),
         "credits": {
             "developer": "@DANGER_FF_LIKE",
